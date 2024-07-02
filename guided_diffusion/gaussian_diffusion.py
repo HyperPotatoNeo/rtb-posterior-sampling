@@ -170,10 +170,11 @@ class GaussianDiffusion:
     def p_sample_loop(self,
                       model,
                       x_start,
-                      measurement,
-                      measurement_cond_fn,
-                      record,
-                      save_root):
+                      measurement=None,
+                      measurement_cond_fn=None,
+                      record=False,
+                      save_root=None,
+                      y=None):
         """
         The function used for sampling from noise.
         """ 
@@ -185,20 +186,21 @@ class GaussianDiffusion:
             time = torch.tensor([idx] * img.shape[0], device=device)
             
             img = img.requires_grad_()
-            out = self.p_sample(x=img, t=time, model=model)
+            out = self.p_sample(x=img, t=time, model=model, y=y)
             
-            # Give condition.
-            noisy_measurement = self.q_sample(measurement, t=time)
+            if measurement is not None:
+                # Give condition.
+                noisy_measurement = self.q_sample(measurement, t=time)
 
-            # TODO: how can we handle argument for different condition method?
-            img, distance = measurement_cond_fn(x_t=out['sample'],
-                                      measurement=measurement,
-                                      noisy_measurement=noisy_measurement,
-                                      x_prev=img,
-                                      x_0_hat=out['pred_xstart'])
+                # TODO: how can we handle argument for different condition method?
+                img, distance = measurement_cond_fn(x_t=out['sample'],
+                                        measurement=measurement,
+                                        noisy_measurement=noisy_measurement,
+                                        x_prev=img,
+                                        x_0_hat=out['pred_xstart'])
             img = img.detach_()
            
-            pbar.set_postfix({'distance': distance.item()}, refresh=False)
+            #pbar.set_postfix({'distance': distance.item()}, refresh=False)
             if record:
                 if idx % 10 == 0:
                     file_path = os.path.join(save_root, f"progress/x_{str(idx).zfill(4)}.png")
@@ -209,8 +211,12 @@ class GaussianDiffusion:
     def p_sample(self, model, x, t):
         raise NotImplementedError
 
-    def p_mean_variance(self, model, x, t):
-        model_output = model(x, self._scale_timesteps(t))
+    def p_mean_variance(self, model, x, t, y=None):
+        if y is not None:
+            stacked_x = torch.cat([x,y],dim=1)
+            model_output = model(stacked_x, self._scale_timesteps(t))
+        else:
+            model_output = model(x, self._scale_timesteps(t))
         
         # In the case of "learned" variance, model will give twice channels.
         if model_output.shape[1] == 2 * x.shape[1]:
@@ -224,7 +230,7 @@ class GaussianDiffusion:
         model_mean, pred_xstart = self.mean_processor.get_mean_and_xstart(x, t, model_output)
         model_variance, model_log_variance = self.var_processor.get_variance(model_var_values, t)
 
-        assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
+        #assert model_mean.shape == model_log_variance.shape == pred_xstart.shape == x.shape
 
         return {'mean': model_mean,
                 'variance': model_variance,
@@ -362,12 +368,12 @@ class _WrappedModel:
 
 @register_sampler(name='ddpm')
 class DDPM(SpacedDiffusion):
-    def p_sample(self, model, x, t):
-        out = self.p_mean_variance(model, x, t)
+    def p_sample(self, model, x, t, y=None):
+        out = self.p_mean_variance(model, x, t, y)
         sample = out['mean']
 
         noise = torch.randn_like(x)
-        if t != 0:  # no noise when t == 0
+        if t[0] != 0:  # no noise when t == 0
             sample += torch.exp(0.5 * out['log_variance']) * noise
 
         return {'sample': sample, 'pred_xstart': out['pred_xstart']}

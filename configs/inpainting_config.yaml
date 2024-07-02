@@ -5,7 +5,7 @@ conditioning:
 
 data:
   name: ffhq
-  root: ./data/samples/
+  root: /network/scratch/s/siddarth.venkatraman/images1024x1024/
 
 measurement:
   operator:
