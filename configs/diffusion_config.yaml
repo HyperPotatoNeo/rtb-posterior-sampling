@@ -2,7 +2,7 @@ sampler: ddpm
 steps: 1000
 noise_schedule: linear
 model_mean_type: epsilon 
-model_var_type: learned_range
+model_var_type: fixed_small
 dynamic_threshold: False
 clip_denoised: True
 rescale_timesteps: False

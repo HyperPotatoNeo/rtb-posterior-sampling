@@ -6,6 +6,7 @@ import wandb
 from distutils.util import strtobool
 
 import torch
+import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torch.distributions import Normal, kl
 import matplotlib.pyplot as plt
@@ -122,20 +123,19 @@ def main():
                 # Forward measurement model (Ax + n)
                 y = operator.forward(ref_img, mask=mask)
                 y_n = noiser(y)
-
             else: 
                 # Forward measurement model (Ax + n)
                 y = operator.forward(ref_img)
                 y_n = noiser(y).detach()
             
-            t = torch.randint(low=0, high=sampler.num_timesteps, size=(ref_img.shape[0],)).to(device)
-            x_t = sampler.q_sample(ref_img, t)
-            q_mean, q_var, _ = sampler.q_posterior_mean_variance(ref_img, x_t, t)
-            output = sampler.p_mean_variance(model, x_t, t, y_n)
+            if measure_config['operator'] ['name'] == 'super_resolution':
+                y_n = F.interpolate(y_n, (256, 256), mode="bilinear")
             
-            q_dist = Normal(q_mean, torch.sqrt(q_var)+1e-5)
-            p_dist = Normal(output['mean'], torch.sqrt(output['variance'])+1e-5)
-            loss = torch.sum(kl.kl_divergence(q_dist, p_dist))/ref_img.shape[0]
+            t = torch.randint(low=0, high=sampler.num_timesteps, size=(ref_img.shape[0],)).to(device)
+            x_t, epsilon = sampler.q_sample(ref_img, t, return_noise=True)
+            output = model(torch.cat([x_t,y_n],dim=1), sampler._scale_timesteps(t))
+
+            loss = torch.sum((output-epsilon)**2)/ref_img.shape[0]
             loss.backward()
             opt.step()
             
@@ -145,7 +145,7 @@ def main():
                 loss_epoch = loss_epoch/200
                 torch.save(model.state_dict(), 'models/'+args.run_name+'.pt')
                 # Sampling
-                if step % args.log_image_freq == 0 and args.track:
+                if (step+1) % args.log_image_freq == 0 and args.track:
                     x_start = torch.randn((5,3,256,256), device=device)
                     samples = sample_fn(x_start=x_start, y=y_n[:5])
                     samples = samples.permute(0, 2, 3, 1).cpu().numpy()

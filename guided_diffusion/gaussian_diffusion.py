@@ -126,7 +126,7 @@ class GaussianDiffusion:
 
         return mean, variance, log_variance
 
-    def q_sample(self, x_start, t):
+    def q_sample(self, x_start, t, return_noise=False):
         """
         Diffuse the data for a given number of diffusion steps.
 
@@ -143,6 +143,8 @@ class GaussianDiffusion:
         coef1 = extract_and_expand(self.sqrt_alphas_cumprod, t, x_start)
         coef2 = extract_and_expand(self.sqrt_one_minus_alphas_cumprod, t, x_start)
 
+        if return_noise:
+            return coef1 * x_start + coef2 * noise, noise
         return coef1 * x_start + coef2 * noise
 
     def q_posterior_mean_variance(self, x_start, x_t, t):
@@ -198,6 +200,8 @@ class GaussianDiffusion:
                                         noisy_measurement=noisy_measurement,
                                         x_prev=img,
                                         x_0_hat=out['pred_xstart'])
+            else:
+                img = out['sample']
             img = img.detach_()
            
             #pbar.set_postfix({'distance': distance.item()}, refresh=False)
