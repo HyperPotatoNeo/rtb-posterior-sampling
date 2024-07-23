@@ -86,7 +86,7 @@ def main():
     logger.info(f"Conditioning method : {task_config['conditioning']['method']}")
    
     # Load diffusion sampler
-    sampler = create_sampler(**diffusion_config) 
+    sampler = create_sampler(**diffusion_config)
     sample_fn = partial(sampler.p_sample_loop, model=model, measurement_cond_fn=measurement_cond_fn)
 
     # Prepare dataloader
@@ -134,8 +134,9 @@ def main():
             t = torch.randint(low=0, high=sampler.num_timesteps, size=(ref_img.shape[0],)).to(device)
             x_t, epsilon = sampler.q_sample(ref_img, t, return_noise=True)
             output = model(torch.cat([x_t,y_n],dim=1), sampler._scale_timesteps(t))
-
-            loss = torch.sum((output-epsilon)**2)/ref_img.shape[0]
+            
+            w = torch.minimum(torch.tensor(5)/((sampler.sqrt_alphas_cumprod[t.cpu().numpy()] / sampler.sqrt_one_minus_alphas_cumprod[t.cpu().numpy()]) ** 2), torch.tensor(1)).cuda() # Min-SNR-gamma weights
+            loss = torch.mean(w.view(-1, 1, 1, 1) * (output-epsilon)**2)#/ref_img.shape[0]
             loss.backward()
             opt.step()
             
